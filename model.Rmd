@@ -1,0 +1,193 @@
+---
+title: 'MVP Prediction: Initial Modeling'
+author: "Kobe Sarausad"
+date: "4/12/2022"
+output: html_document
+---
+
+<style type="text/css">
+  @import url('https://fonts.googleapis.com/css2?family=Mukta:wght@200;400&display=swap');
+  body{
+  font-family: 'Mukta', sans-serif;
+  font-size: 12pt;
+  }
+</style>
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.align = "center", message = FALSE)
+```
+
+# Predicting the NBA MVP using season stats and Twitter sentiment
+
+First, let's start by importing the necessary libraries.
+
+```{r libraries, message=FALSE}
+library(tidyverse) # data manipulation and plotting
+library(tidymodels) # linear models
+library(corrr) # analyze correlation
+library(paletteer) # cool palette used in ISLR textbook
+library(ggridges) # ridge plots
+library(kableExtra) # nice tables
+library(rtweet) # get tweets
+
+theme_cons <- theme_minimal() +
+  theme(text = element_text(family = "Titillium Web"))
+```
+
+As I am still in the initial stages of this project, I started off by scraping MVP data off [basketball-reference](https://www.basketball-reference.com/). Specifically, the players that are included in this model are players that received at least one MVP vote, and for each player there are summary season stats.
+
+```{r}
+mvp <- read.csv("mvpdata.csv")
+head(mvp)
+```
+
+I am also going to look to use FiveThirtyEight's player evaluation score: RAPTOR. This could be a helpful feature in our prediction model, though it might be highly correlated with season stats. I was able to retreive this data directly off FiveThirtyEight's [github repository](https://github.com/fivethirtyeight/data/tree/master/nba-raptor).
+
+```{r}
+raptor <- read.csv("https://raw.githubusercontent.com/fivethirtyeight/data/master/nba-raptor/historical_RAPTOR_by_player.csv")
+head(raptor)
+```
+
+Now, we will join these two dataframes together. We'll be joining by player but also make sure join by season as well since we don't want RAPTOR scores from other seasons!
+
+```{r}
+mvp_raptor <- left_join(mvp, raptor, by = c("Player" = "player_name", "season"))
+```
+
+We can check for any NAs that might've resulted from the join...
+
+```{r}
+head(mvp_raptor[is.na(mvp_raptor$raptor_total), ])
+```
+
+In fact, we do have some error as names in the raptor dataset don't contain accented letters. Let's replace these letters with non accented letters.
+
+```{r}
+players_accent <- unique(mvp_raptor[is.na(mvp_raptor$raptor_total), ]$Player)
+players_no_accent <- str_remove(iconv(players_accent, to='ASCII//TRANSLIT'), "'")
+players_replace <- data.frame(players_accent, players_no_accent)
+
+mvp_clean <- mvp_raptor %>% 
+  filter(is.na(raptor_total)) %>% 
+  left_join(players_replace, by = c("Player" = "players_accent")) %>% 
+  mutate(Player = players_no_accent) %>% 
+  select(-players_no_accent) %>% 
+  rbind(mvp_raptor[complete.cases(mvp_raptor), ])
+
+mvp_clean <- left_join(mvp_clean[, c(1:22)], raptor, by = c("Player" = "player_name", "season"))
+
+mvp_clean[is.na(mvp_clean$raptor_total), ]
+```
+
+Now that the data is cleaned, we can explore our data a bit.
+
+```{r}
+mvp_clean %>% 
+  ggplot() +
+  geom_histogram(aes(x = PTS), fill = "deepskyblue3", color = "black") + 
+  theme_cons
+
+mvp_clean %>% 
+  ggplot() +
+  geom_density_ridges(aes(x = PTS, y = as.factor(season), fill = as.factor(season))) +
+  theme_cons
+
+mvp_clean %>% 
+  ggplot() +
+  geom_density_ridges(aes(x = Share, y = as.factor(season), fill = as.factor(season))) +
+  theme_cons
+```
+
+Now, we are ready to test features!
+
+```{r}
+features <- c("Age", names(mvp_clean)[c(10:19)], "raptor_total", "raptor_defense", "raptor_offense", "war_reg_season")
+
+corr_mvp <- mvp_clean %>% 
+  select(features, Share) %>% 
+  correlate()
+
+corr_mvp %>% 
+  stretch() %>% 
+  ggplot(aes(x,y, fill = r)) +
+  geom_tile() +
+  geom_text(aes(x, label = as.character(fashion(r))), size = 1.8) +
+  scale_fill_paletteer_c("scico::roma", limits = c(-1, 1), direction = -1) +
+  labs(x = "", y = "", title = "Correlation Matrix") +
+  theme_cons +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+We can observe that there are a couple of features that might become good predictors of MVP share count. Let's split our data into test and train.
+
+```{r}
+set.seed(1)
+split <- initial_split(mvp_clean, strata = Share, prop = 0.5)
+mvp_train <- training(split)
+mvp_test <- testing(split)
+```
+
+Then, we can specify our model
+
+```{r}
+# Specify model
+lm_spec <- linear_reg() %>% 
+  set_mode("regression") %>% 
+  set_engine("lm")
+
+# Fit model
+mvp_model <- lm_spec %>% 
+  fit(Share ~ PTS + raptor_total + war_reg_season, data = mvp_train)
+```
+
+Compute RMSE for test/train
+```{r}
+train_error <- augment(mvp_model, new_data = mvp_train) %>% 
+  rmse(truth = Share, estimate = .pred) %>% 
+  select(.estimate)
+
+test_error <- augment(mvp_model, new_data = mvp_test) %>% 
+  rmse(truth = Share, estimate = .pred) %>% 
+  select(.estimate)
+
+mse <- data.frame(train_error^2, test_error^2)
+colnames(mse) <- c("Train Error", "Test Error")
+```
+
+Since we are working with proportions (values between 0-1), square rooting the value actually makes the value bigger, so let's square the RMSE to just get the MSE.
+
+```{r}
+mse %>% 
+  kable() %>% 
+  kable_styling(full_width = FALSE)
+```
+
+Not too bad, but not too great at the same time.
+
+We now know that using WAR, Raptor, and Avg. Points season stats makes for good predictions of the MVP share, but let's add Twitter sentiment to make the model even better.
+
+However, we have ran into a problem: we can't query tweets past the one-week period, thus not allowing us to get tweets from 2005. But, we can get tweets from past dates if we specify a search term. That got me thinking to think a way around this problem, then I thought that by querying multiple news outlet Twitter accounts, we may be able to get the sentiment of the "media".
+
+```{r}
+# poly_tuned_rec <- recipe(Share ~ PTS + raptor_total + war_reg_season, data = mvp_train) %>% 
+#   step_poly(PTS, degree = tune())
+# 
+# poly_tuned_wf <- workflow() %>% 
+#   add_recipe(poly_tuned_rec) %>% 
+#   add_model(lm_spec)
+# 
+# fit(poly_tuned_wf, data = mvp_train)
+# mvp_folds <- vfold_cv(mvp_train, v = 10)
+# 
+# # degree_grid <- grid_regular(degree(range = c(1, 10)), levels = 10)
+# degree_grid <- tibble(degree = seq(1, 10))
+# 
+# tune_res <- tune_grid(
+#   object = poly_tuned_wf,
+#   resamples = mvp_folds,
+#   grid = degree_grid
+# )
+# 
+# autoplot(tune_res)
+```
