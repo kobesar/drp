@@ -1,0 +1,253 @@
+---
+title: 'MVP Prediction: Logistic Regression & Regularization (Week 2)'
+author: "Kobe Sarausad"
+date: "4/19/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE)
+```
+
+# Predicting the NBA MVP using season stats and Twitter sentiment
+
+```{r}
+library(tidyverse)
+library(tidymodels)
+library(nbastatR)
+library(glmnet)
+library(rtweet)
+library(vader)
+library(newsanchor)
+library(httr)
+library(rvest)
+
+theme_cons <- theme_minimal() +
+  theme(text = element_text(family = "Titillium Web"))
+
+data <- read.csv("../data/fullmvp.csv")
+raptor <- read.csv("https://raw.githubusercontent.com/fivethirtyeight/data/master/nba-raptor/historical_RAPTOR_by_player.csv")
+```
+
+## Begin by finding more season stats
+
+```{r}
+nba2021 <- seasons_schedule(2021)
+
+test <- fanduel_summary(game_ids = nba2021$idGame[1])
+players <- nba_players()
+
+data$win <- data$Rank == 1
+```
+
+## EDA
+
+```{r}
+raptor %>% 
+  ggplot() +
+  geom_histogram(aes(x = raptor_total), bins = 100) +
+  geom_vline(xintercept = mean(data$raptor_total), color = "orange") +
+  geom_text(aes(x = mean(data$raptor_total) - 2, y = 3000, label = "MVP Candidates"), size = 3, family = "Titillium Web", angle = 90) +
+  geom_vline(xintercept = mean(data$raptor_total[data$Rank == 1]), color = "seagreen4") +
+    geom_text(aes(x = mean(data$raptor_total[data$Rank == 1]) + 2, y = 3000, label = "MVP"), size = 3, family = "Titillium Web", angle = -90) +
+  labs(title = "MVPs on average have a higher raptor score") +
+  theme_cons
+```
+```{r}
+data %>% 
+  ggplot() +
+  geom_point(aes(x = Share, y = raptor_total, color = win)) +
+  theme_cons +
+  scale_color_manual(values = c("orange", "seagreen4"))
+```
+
+```{r}
+data %>% 
+  ggplot() +
+  geom_point(aes(x = raptor_total, y = war_reg_season, color = Share)) +
+  theme_cons +
+  scale_color_gradient(low = "orange", high = "darkblue")  
+```
+
+```{r}
+data %>% 
+  ggplot() +
+  geom_histogram(aes(x = Age), bins = 20) +
+  theme_cons
+```
+
+```{r}
+data %>% 
+  group_by(Age) %>% 
+  summarize(share = mean(Share)) %>% 
+  ggplot() +
+  geom_line(aes(x = Age, y = share)) +
+  geom_point(data = data, aes(x = Age, y = Share), alpha = 0.2) +
+  theme_cons
+```
+
+
+
+## Logistic Regression
+
+Since we are using logistic regression, we need to make a binary variable which indicates if the player was the resulting MVP or not.
+
+```{r}
+split <- initial_split(data, strata = Share, prop = 0.5)
+mvp_train <- training(split)
+mvp_test <- testing(split)
+
+glm.fit <- glm(win ~ Age + G + MP + PTS + TRB + AST + STL + BLK + FG. + X3P. + FT. + WS + WS.48 + raptor_offense + raptor_defense + raptor_total + war_reg_season + predator_offense + predator_defense + predator_total + pace_impact, data = mvp_train, family = 'binomial')
+summary(glm.fit)
+```
+
+The p-values tell us some interesting things about how some features are important whilst some are not.
+
+```{r}
+
+```
+
+## Ridge Regression
+
+```{r}
+features <- c("Age", "G", "MP", "PTS", "TRB", "AST", "STL", "BLK", "FG.", "X3P.", "FT.", "WS", "WS.48", "raptor_offense", "raptor_defense", "raptor_total", "war_reg_season", "predator_offense", "predator_defense", "predator_total", "pace_impact")
+
+# lambda_seq <- 10^seq(2, -2, by = -.1)
+# 
+# fit <- glmnet(select(mvp_train, features), mvp_train$Share, alpha = 0, lambda  = lambda_seq)
+# 
+# ridge_cv <- cv.glmnet(select(mvp_train, features), mvp_train$Share, alpha = 0, lambda = lambdas_seq)
+# best_lambda <- ridge_cv$lambda.min
+# best_lambda
+```
+
+## LASSO Regression w/o standaridization
+
+```{r}
+mvp_train_ <- select(mvp_train, features, Share)
+
+mvp_rec <- recipe(Share ~ ., data = mvp_train_) 
+
+wf <- workflow() %>%
+  add_recipe(mvp_rec)
+
+mvp_boot <- bootstraps(mvp_train_)
+
+tune_spec <- linear_reg(penalty = tune(), mixture = 1) %>%
+  set_engine("glmnet")
+
+lambda_grid <- grid_regular(penalty(), levels = 50)
+
+set.seed(1234)
+lasso_grid <- tune_grid(
+  wf %>% add_model(tune_spec),
+  resamples = mvp_boot,
+  grid = lambda_grid
+)
+
+lasso_grid %>%
+  collect_metrics()
+
+lasso_grid %>%
+  collect_metrics() %>%
+  ggplot(aes(penalty, mean, color = .metric)) +
+  geom_errorbar(aes(
+    ymin = mean - std_err,
+    ymax = mean + std_err
+  ),
+  alpha = 0.5
+  ) +
+  geom_line(size = 1.5) +
+  facet_wrap(~.metric, scales = "free", nrow = 2) +
+  scale_x_log10() +
+  theme(legend.position = "none") + 
+  cons_theme
+```
+
+## LASSO Regression w/ standaridization
+
+```{r}
+mvp_rec_std <- recipe(Share ~ ., data = mvp_train)  %>% 
+  step_normalize(all_numeric(), -all_outcomes())
+
+wf_std <- workflow() %>%
+  add_recipe(mvp_rec_std)
+
+mvp_boot_std <- bootstraps(mvp_train_)
+
+tune_spec <- linear_reg(penalty = tune(), mixture = 1) %>%
+  set_engine("glmnet")
+
+lambda_grid <- grid_regular(penalty(), levels = 50)
+
+set.seed(1234)
+lasso_grid_std <- tune_grid(
+  wf %>% add_model(tune_spec),
+  resamples = mvp_boot_std,
+  grid = lambda_grid
+)
+
+lasso_grid_std %>%
+  collect_metrics()
+
+lasso_grid_std %>%
+  collect_metrics() %>%
+  ggplot(aes(penalty, mean, color = .metric)) +
+  geom_errorbar(aes(
+    ymin = mean - std_err,
+    ymax = mean + std_err
+  ),
+  alpha = 0.5
+  ) +
+  geom_line(size = 1.5) +
+  facet_wrap(~.metric, scales = "free", nrow = 2) +
+  scale_x_log10() +
+  theme(legend.position = "none") +
+  cons_theme
+```
+```{r}
+lowest_rmse <- lasso_grid %>%
+  select_best("rmse", maximize = FALSE)
+
+final_lasso <- finalize_workflow(
+  wf %>% add_model(tune_spec),
+  lowest_rmse
+)
+```
+## Regularization
+
+```{r}
+
+```
+
+## Fetching some Lebron Tweets
+
+```{r}
+lebron <- search_tweets("Lebron", n = 1000, include_rts = FALSE, type = "popular")
+```
+
+##Sentiment Analysis
+
+```{r}
+get_vader("I love it")
+
+get_vader("Mariners suck")
+
+get_vader("Mariners suck but I still love them")
+
+lebron$sentiment <- vader_df(lebron$text)
+
+lebron$wsentscore <- lebron$sentiment$compound * lebron$favorite_count
+
+lebron %>% 
+  ggplot() +
+  geom_point(aes(x = favorite_count, y = sentiment$compound)) +
+  theme_cons
+
+nytlebronmvp <- read_html("https://www.nytimes.com/2010/05/03/sports/basketball/03lebron.html") %>% 
+  html_nodes(".css-g5piaz") %>% 
+  html_text() %>% 
+  paste(collapse = '')
+
+get_vader(nytlebronmvp)
+```

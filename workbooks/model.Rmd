@@ -1,5 +1,5 @@
 ---
-title: 'MVP Prediction: Initial Modeling'
+title: 'MVP Prediction: Initial Modeling (Week 1)'
 author: "Kobe Sarausad"
 date: "4/12/2022"
 output: html_document
@@ -7,7 +7,7 @@ output: html_document
 
 <style type="text/css">
   @import url('https://fonts.googleapis.com/css2?family=Mukta:wght@200;400&display=swap');
-  body{
+  body {
   font-family: 'Mukta', sans-serif;
   font-size: 12pt;
   }
@@ -30,6 +30,7 @@ library(paletteer) # cool palette used in ISLR textbook
 library(ggridges) # ridge plots
 library(kableExtra) # nice tables
 library(rtweet) # get tweets
+library(nbastatR)
 
 theme_cons <- theme_minimal() +
   theme(text = element_text(family = "Titillium Web"))

@@ -21,6 +21,8 @@ twitter_token <- create_token(
 
 lebron <- search_tweets("Lebron James", n = 100, include_rts = FALSE, type = "popular")
 
+nyt <- get_timeline("nytimes", n = 100, since_id = "1090887065456148481", max_id = "1092889267674599424", type = "recent", token = twitter_token)
+
 setup_twitter_oauth(api_key, api_secret, access, access_secret)
 
 lebron <- searchTwitter("Lebron James + Lebron", since = '2022-01-01',  until = '2022-04-11', n = 100, resultType = "popular") %>%
