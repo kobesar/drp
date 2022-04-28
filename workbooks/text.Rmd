@@ -1,0 +1,24 @@
+---
+title: "Text Analysis"
+author: "Kobe Sarausad"
+date: "4/26/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(vader)
+```
+
+```{r}
+titles <- read.csv("../data/titles.csv")
+sentiment <- vader_df(titles$titles)
+```
+
+```{r}
+write.csv(sentiment, "sentiment.csv")
+```

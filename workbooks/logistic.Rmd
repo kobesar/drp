@@ -161,7 +161,7 @@ lasso_grid %>%
   facet_wrap(~.metric, scales = "free", nrow = 2) +
   scale_x_log10() +
   theme(legend.position = "none") + 
-  cons_theme
+  theme_cons
 ```
 
 ## LASSO Regression w/ standaridization
@@ -203,7 +203,7 @@ lasso_grid_std %>%
   facet_wrap(~.metric, scales = "free", nrow = 2) +
   scale_x_log10() +
   theme(legend.position = "none") +
-  cons_theme
+  theme_cons
 ```
 ```{r}
 lowest_rmse <- lasso_grid %>%
@@ -241,7 +241,7 @@ lebron$wsentscore <- lebron$sentiment$compound * lebron$favorite_count
 
 lebron %>% 
   ggplot() +
-  geom_point(aes(x = favorite_count, y = sentiment$compound)) +
+  geom_point(aes(x = sentiment$compound, y = favorite_count)) +
   theme_cons
 
 nytlebronmvp <- read_html("https://www.nytimes.com/2010/05/03/sports/basketball/03lebron.html") %>% 
