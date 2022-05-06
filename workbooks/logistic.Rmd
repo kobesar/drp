@@ -5,6 +5,14 @@ date: "4/19/2022"
 output: html_document
 ---
 
+<style type="text/css">
+  @import url('https://fonts.googleapis.com/css2?family=Mukta:wght@200;400&display=swap');
+  body {
+  font-family: 'Mukta', sans-serif;
+  font-size: 12pt;
+  }
+</style>
+
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, message = FALSE)
 ```

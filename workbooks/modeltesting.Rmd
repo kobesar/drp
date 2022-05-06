@@ -1,0 +1,362 @@
+---
+title: "models"
+author: "Kobe Sarausad"
+date: "4/29/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE)
+```
+
+## NOTES
+
+Look at how different advanced stats change our models specifically
+
+
+## Setup
+
+```{r load}
+library(tidymodels)
+library(kableExtra)
+library(rstantools)
+library(rstanarm)
+
+mvp <- read.csv("../data/weightedmvp.csv")
+
+theme_cons <- theme_minimal() +
+  theme(text = element_text(family = "Titillium Web"))
+```
+
+## Splitting data
+
+```{r}
+mvp_imp <- mvp %>% 
+  select(-c(1, 2, 4, 6, 7, 8, 21)) %>% 
+  mutate(comp_weighted = scale(comp_weighted))
+
+first_split <- initial_split(mvp_imp, prop = 3/5)
+
+mvp_trainw <- training(first_split)
+
+second_split <- initial_split(testing(first_split), prop = 1/2)
+
+mvp_validw <- training(second_split)
+mvp_testw2 <- testing(second_split)
+
+mvp_testw <- rbind(mvp_validw, mvp_testw2)
+
+mvp_train <- mvp_trainw %>% 
+  select(-comp_weighted)
+
+mvp_test <- mvp_testw %>% 
+  select(-comp_weighted)
+
+mvp_valid <- mvp_validw %>% 
+  select(-comp_weighted)
+
+mvp_test2 <- mvp_testw2 %>% 
+  select(-comp_weighted)
+```
+
+## Correlation Matrix
+
+```{r}
+library(corrr)
+library(paletteer)
+
+mvp %>%
+  select(-c(1, 2, 4, 6, 7, 8, 10, 21)) %>% 
+  correlate() %>% 
+  stretch() %>% 
+  ggplot(aes(x, y, fill = r)) +
+  geom_tile() +
+  geom_text(aes(label = as.character(fashion(r))), size = 0.9) +
+  scale_fill_paletteer_c("scico::roma", limits = c(-1, 1), direction = -1) +
+  theme_cons +
+  theme(axis.text.x = element_text(angle = 90))
+  
+```
+
+## Linear Regression
+
+```{r}
+rec <- recipe(share ~ ., mvp_train) %>% 
+  step_normalize(all_numeric(), -all_outcomes())
+
+linreg_spec <- linear_reg() %>%
+  set_engine("lm")
+
+wf <- workflow() %>% 
+  add_recipe(rec)
+
+linreg_fit <- wf %>%
+  add_model(linreg_spec) %>%
+  fit(data = mvp_train)
+
+linreg_fit %>%
+  pull_workflow_fit() %>%
+  tidy() %>%
+  kable() %>% 
+  kable_styling()
+```
+
+## Regularized Regression
+
+### Ridge
+
+```{r}
+coef_path_values <- c(0, 10^seq(-5, 1, length.out = 7))
+
+ridge_spec <- linear_reg(penalty = 1, mixture = 0) %>% 
+  set_engine("glmnet", path_values = coef_path_values)
+
+ridge_fit <- wf %>%
+  add_model(ridge_spec) %>%
+  fit(data = mvp_train)
+
+ridge_fit %>%
+  pull_workflow_fit() %>%
+  tidy() %>%
+  kable() %>% 
+  kable_styling()
+```
+
+### LASSO
+
+```{r}
+doParallel::registerDoParallel()
+
+mvp_boot <- bootstraps(mvp_train, strata = season)
+
+tune_spec <- linear_reg(penalty = tune(), mixture = 1) %>%
+  set_engine("glmnet")
+
+lambda_grid <- grid_regular(penalty(), levels = 50)
+
+lasso_grid <- tune_grid(
+  wf %>% add_model(tune_spec),
+  resamples = mvp_boot,
+  grid = lambda_grid
+)
+
+lasso_grid %>%
+  collect_metrics() %>%
+  ggplot(aes(penalty, mean, color = .metric)) +
+  geom_errorbar(aes(
+    ymin = mean - std_err,
+    ymax = mean + std_err
+  ),
+  alpha = 0.5
+  ) +
+  geom_line(size = 1.5) +
+  facet_wrap(~.metric, scales = "free", nrow = 2) +
+  scale_x_log10() +
+  theme(legend.position = "none") + theme_cons
+
+lowest_rmse <- lasso_grid %>%
+  select_best("rmse", maximize = FALSE)
+```
+
+```{r}
+library(vip)
+
+final_lasso <- finalize_workflow(
+  wf %>% add_model(tune_spec),
+  lowest_rmse
+)
+
+last_fit(
+  final_lasso,
+  first_split
+) %>%
+  collect_metrics()
+
+final_lasso %>%
+  fit(mvp_train) %>%
+  pull_workflow_fit() %>%
+  vi(lambda = lowest_rmse$penalty) %>%
+  mutate(
+    Importance = abs(Importance),
+    Variable = forcats::fct_reorder(Variable, Importance)
+  ) %>%
+  ggplot(aes(x = Importance, y = Variable, fill = Sign)) +
+  geom_col() +
+  scale_x_continuous(expand = c(0, 0)) +
+  labs(y = NULL) +
+  theme_cons
+```
+
+## Random Forest
+
+```{r}
+library(ISLR)
+library(rpart.plot)
+library(vip)
+
+rf_spec <- rand_forest(mtry = 6) %>% 
+  set_engine("randomForest", importance = TRUE) %>% 
+  set_mode("regression")
+
+rf_fit <- fit(rf_spec, share ~ ., data = mvp_train)
+
+rf_rmse <- augment(rf_fit, new_data = mvp_test) %>%
+  rmse(truth = share, estimate = .pred)
+
+augment(rf_fit, new_data = mvp_test) %>%
+  ggplot(aes(share, .pred)) +
+  geom_abline() +
+  geom_point(alpha = 0.5) +
+  labs(title = "Random Forest", subtitle = paste0("MSE: ", round(rf_rmse$.estimate, 5)^2)) +
+  theme_cons
+```
+### Feature Importance
+
+```{r}
+rf_fit %>% 
+  vip(20) +
+  theme_cons
+```
+
+## Adaboost
+
+```{r}
+
+```
+
+## Neutral Networks
+
+```{r}
+
+```
+
+## XGBoost
+
+```{r}
+boost_spec <- boost_tree(trees = 5000, tree_depth = 4) %>%
+  set_engine("xgboost") %>%
+  set_mode("regression")
+
+boost_fit <- fit(boost_spec, share ~ ., data = mvp_train)
+
+boost_rmse <- augment(boost_fit, new_data = mvp_test) %>%
+  rmse(truth = share, estimate = .pred)
+
+augment(boost_fit, new_data = mvp_test) %>%
+  ggplot(aes(share, .pred)) +
+  geom_abline() +
+  geom_point(alpha = 0.5) +
+  labs(title = "XGBoost", subtitle = paste0("MSE: ", round(boost_rmse$.estimate, 5)^2)) +
+  theme_cons
+```
+
+### Feature Importance
+
+```{r}
+boost_fit %>% 
+  vip(20) +
+  theme_cons
+```
+
+## Bayesian
+
+```{r}
+model_bayes<- stan_glm(share~., data=mvp_trainw, seed=111)
+
+summary(model_bayes)
+```
+
+What is going on here?
+
+# Using weighted sentiment (Random Forest and XGBoost)
+
+Now, we add the weighted sentiment as an extra feature.
+
+```{r}
+weighted_train <- mvp_trainw
+  
+weighted_test <- mvp_testw
+```
+
+## Random Forest
+
+```{r}
+rf_spec <- rand_forest(mtry = 6) %>% 
+  set_engine("randomForest", importance = TRUE) %>% 
+  set_mode("regression")
+
+rf_fit_w <- fit(rf_spec, share ~ ., data = weighted_train)
+
+rf_rmse_w <- augment(rf_fit_w, new_data = weighted_test) %>%
+  rmse(truth = share, estimate = .pred)
+
+augment(rf_fit_w, new_data = weighted_test) %>%
+  ggplot(aes(share, .pred)) +
+  geom_abline() +
+  geom_point(alpha = 0.5) +
+  labs(title = "Random Forest with weighted sentiment", subtitle = paste0("MSE: ", round(rf_rmse_w$.estimate, 5)^2)) +
+  theme_cons
+```
+
+### Feature Importance
+```{r}
+rf_fit_w %>% 
+  vip(20) +
+  theme_cons
+```
+
+## XGBoost
+
+```{r}
+boost_spec_w <- boost_tree(trees = 5000, tree_depth = 4) %>%
+  set_engine("xgboost") %>%
+  set_mode("regression")
+
+boost_fit_w <- fit(boost_spec_w, share ~ ., data = weighted_train)
+
+boost_rmse_w <- augment(boost_fit_w, new_data = weighted_test) %>%
+  rmse(truth = share, estimate = .pred)
+
+augment(boost_fit_w, new_data = weighted_test) %>%
+  ggplot(aes(share, .pred)) +
+  geom_abline() +
+  geom_point(alpha = 0.5) +
+  labs(title = "XGBoost with weighted sentiment", subtitle = paste0("MSE: ", round(boost_rmse_w$.estimate, 5)^2)) +
+  theme_cons
+```
+
+### Feature Importance
+
+```{r}
+boost_fit_w %>%
+  vip(num_features = 20) +
+  theme_cons
+```
+
+Testing model with few features
+
+```{r}
+boost_fit_w_simp <- fit(boost_spec_w, share ~ ppg + rap_tot + war_tot + comp_weighted, data = weighted_train)
+
+boost_rmse_w_simpl <- augment(boost_fit_w_simp, new_data = weighted_test) %>%
+  rmse(truth = share, estimate = .pred)
+
+augment(boost_fit_w_simp, new_data = weighted_test) %>%
+  ggplot(aes(share, .pred)) +
+  geom_abline() +
+  geom_point(alpha = 0.5) +
+  labs(title = "XGBoost with weighted sentiment", subtitle = paste0("MSE: ", round(boost_rmse_w$.estimate, 5)^2)) +
+  theme_cons
+```
+
+Some questions we can consider with the findings here are:
+
+  - NBA MVP not truly a popularity contest?
+  - What variables are most important when determining MVP?
+  
+  
+Questions this week:
+
+  - Would most models have similar feature importance rankings?
+  - Help me build a betting model for the NBA?
+  

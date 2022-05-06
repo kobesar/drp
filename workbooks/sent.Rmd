@@ -1,0 +1,93 @@
+---
+title: "Sentiment Analysis"
+author: "Kobe Sarausad"
+date: "4/28/2022"
+output: html_document
+---
+
+<style type="text/css">
+  @import url('https://fonts.googleapis.com/css2?family=Mukta:wght@200;400&display=swap');
+  body {
+  font-family: 'Mukta', sans-serif;
+  font-size: 12pt;
+  }
+</style>
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE)
+```
+
+```{r}
+library(tidyverse)
+library(ggrepel)
+library(kableExtra)
+
+mvp <- read.csv("../data/cleanedmvp.csv")
+
+theme_cons <- theme_minimal() +
+  theme(text = element_text(family = "Titillium Web"))
+```
+
+What the dataset looks like, the posts column is in JSON format with up to 25 relevant posts that came up in the reddit search. Also accompanying the posts is the number of comments and upvotes for that particular post.
+
+```{r}
+head(mvp, 2) %>% 
+  kable() %>% 
+  kable_styling()
+```
+
+The top 5 players that have that have most occurrences of being considered an MVP candidate.
+
+```{r}
+# Top 5 players with the most seasons considered as an MVP candidate
+tab <- mvp %>% 
+  group_by(player) %>% 
+  summarize(count = n(), Upvotes = sum(avg_upvotes), Sentiment = mean(comp)) %>% 
+  arrange(-count) %>% 
+  head(5)
+
+tab %>% 
+  kable() %>% 
+  kable_styling(full_width = FALSE) %>% 
+  column_spec(3, color = "white", background = spec_color(tab$Upvotes, option = "D", begin = 0.4, end = 0.8, direction = 1))
+```
+
+```{r}
+mvp %>%
+  ggplot() +
+  geom_histogram(aes(x = comp), fill = "#79be7b") +
+  labs(title = "Distribution of sentiment scores") +
+  theme_cons
+```
+
+Distribution of the sentiment scores.
+
+```{r}
+mvp %>%
+  select(neu, neg, pos) %>% 
+  pivot_longer(cols = c(neu, neg, pos), names_to = "sent", values_to = "score") %>% 
+  ggplot() +
+  geom_histogram(aes(x = score, fill = sent)) +
+  scale_fill_manual(values = c("#be4f4f", "#4f95be", "#79be7b")) +
+  labs(title = "Distribution of sentiment scores by type") +
+  theme_cons
+```
+
+```{r}
+mvp %>% 
+  ggplot() +
+  geom_point(aes(x = share, y = comp, color = rap_tot), alpha = 0.8) +
+  scale_color_gradient2(high = "#00876c", mid = "#f1f1f1", low = "#d43d51", midpoint = mean(mvp$rap_tot)) +
+  labs(title = "The Raptor Score seems to be a good indicator of player's MVP status") +
+  theme_cons
+```
+
+```{r}
+mvp %>% 
+  ggplot() +
+  geom_histogram(aes(x = age), bins = 18, fill = "#79be7b") +
+  geom_vline(xintercept = c(mvp$age[mvp$rank == 1]), alpha = 0.4) +
+  ylim(0, 30) +
+  geom_label_repel(data = mvp[mvp$rank == 1, ], aes(x = age, y = 25, label = lapply(str_split(player, " "), `[[`, 2)), size = 3, max.overlaps = Inf, family = "Titillium Web") +
+  theme_cons
+```
