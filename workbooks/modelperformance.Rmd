@@ -1,0 +1,262 @@
+---
+title: "Normalization/Scoring"
+author: "Kobe Sarausad"
+date: "5/11/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Setup
+
+```{r load}
+library(tidymodels)
+library(kableExtra)
+library(rstantools)
+library(rstanarm)
+library(tidyverse)
+library(vip)
+library(glmnet)
+
+mvp <- read.csv("../data/weightedmvp.csv")
+# cand2022 <- read.csv("../data/cands2022.csv")
+
+theme_cons <- theme_minimal() +
+  theme(text = element_text(family = "Titillium Web"))
+```
+
+### Different way of splitting data
+
+Gonna use data from 2010-2015 as the training data so I can compare the ranks easier.
+
+```{r}
+`%!in%` <- Negate(`%in%`)
+
+# features <- c(5, 11:20, 24:26, 28, 30:41)
+features <- names(mvp)[c(5, 11:20, 22:40)]
+
+predict <- c(4, 2, 7:10)
+
+mvp[features] <- as.data.frame(scale(mvp[features]))
+
+year_split <- sample(2010:2021, 8, FALSE)
+
+mvp_train <- mvp %>% 
+  filter(season %in% year_split)
+
+mvp_test <- mvp %>%
+  filter(season %!in% year_split)
+```
+
+#### Quick LASSO
+
+```{r}
+mvp_norm <- scale(mvp_train[features])
+
+lasso <- cv.glmnet(data.matrix(mvp_norm), mvp_train$mvppts, alpha = 1)
+
+lambda <- lasso$lambda.min
+
+plot(lasso)
+
+lasso_best <- glmnet(data.matrix(mvp_norm), mvp_train$mvppts, alpha = lambda)
+coef(lasso_best, s = lambda)[, 1]
+
+
+```
+
+```{r}
+boost_spec <- boost_tree(trees = 5000, tree_depth = 4) %>%
+  set_engine("xgboost") %>%
+  set_mode("regression")
+
+boost_fit <- fit(boost_spec, share ~ ., data = mvp_train[c(features, 10)])
+```
+
+```{r}
+boost_predict <- augment(boost_fit, new_data = mvp_test[c(features, 10)])
+
+boost_predict %>% 
+  ggplot() +
+  geom_point(aes(x = share, y = .pred))
+
+boost_df <- cbind(boost_predict, mvp_test[c(2, 3, 4)])
+
+boost_df <- boost_df %>% 
+  group_by(season) %>% 
+  arrange(-.pred, .by_group = TRUE) %>% 
+  mutate(pred_rank = 1:n(), rank = as.numeric(str_remove(rank, "T")), rank_diff_sq = (rank-pred_rank)^2, accuracy = pred_rank == rank)
+
+rmse(boost_df, share, .pred)
+```
+
+### Assess the accuracy
+
+```{r}
+mean(boost_df$accuracy)
+```
+
+#### Accuracy by equality
+
+```{r}
+accu_tab <- boost_df %>% 
+  group_by(season) %>% 
+  summarize(accu = mean(accuracy))
+accu_tab
+```
+
+```{r}
+season_accu <- accu_tab %>% 
+  filter(accu == max(accu)) %>% 
+  pull(season)
+
+# boost_df %>% 
+#   filter(season == season_accu) %>% 
+#   select(season, player, rank, pred_rank, share, .pred)
+```
+
+#### Accuracy by proximity
+
+```{r}
+accu_tab2 <- boost_df %>% 
+  group_by(season) %>% 
+  summarize(error = sum(rank_diff_sq)) 
+accu_tab2
+```
+
+```{r}
+season_accu2 <- accu_tab2 %>% 
+  filter(error == min(error)) %>% 
+  pull(season)
+
+# boost_df %>% 
+#   filter(season == season_accu2) %>% 
+#   select(season, player, rank, pred_rank, share, .pred)
+```
+
+### Predicting MVP points instead of share
+
+```{r}
+boost_fit <- fit(boost_spec, mvppts ~ ., data = mvp_train[c(features, "mvppts")])
+
+boost_predict <- augment(boost_fit, new_data = mvp_test[c(features, 8)])
+
+boost_predict %>% 
+  ggplot() +
+  geom_point(aes(x = mvppts, y = .pred))
+
+boost_df <- cbind(boost_predict, mvp_test[c(2, 3, 4, 9, 10)])
+
+boost_df <- boost_df %>% 
+  group_by(season) %>% 
+  arrange(-.pred, .by_group = TRUE) %>% 
+  mutate(pred_share = .pred / sum(.pred), pred_rank = 1:n(), rank = as.numeric(str_remove(rank, "T")), rank_diff_sq = (rank-pred_rank)^2, accuracy = pred_rank == rank)
+```
+
+```{r}
+mean(boost_df$accuracy)
+```
+
+#### Accuracy by equality
+
+```{r}
+accu_tab <- boost_df %>% 
+  group_by(season) %>% 
+  summarize(accu = mean(accuracy))
+accu_tab
+```
+
+```{r}
+season_accu <-accu_tab %>% 
+  filter(accu == max(accu)) %>% 
+  pull(season)
+
+boost_df %>% 
+  filter(season == season_accu) %>% 
+  select(season, player, rank, pred_rank, share, pred_share, mvppts, .pred)
+```
+
+#### Accuracy by proximity
+
+```{r}
+accu_tab2 <- boost_df %>% 
+  group_by(season) %>% 
+  summarize(error = sum(rank_diff_sq)) 
+accu_tab2
+```
+
+```{r}
+season_accu2 <- accu_tab2 %>% 
+  filter(error == min(error)) %>% 
+  pull(season)
+
+boost_df %>% 
+  filter(season == season_accu2) %>% 
+  select(season, player, rank, pred_rank, share, pred_share, mvppts, .pred)
+```
+
+```{r}
+boost_df %>% 
+  group_by(rank, pred_rank) %>% 
+  summarize(diff = mean(share - pred_share)) %>% 
+  ggplot() +
+  geom_tile(aes(x = rank, y = pred_rank, fill = diff)) +
+  labs(x = "Actual Rank", y = "Predicted Rank") +
+  theme_cons
+```
+
+It seems like the predictions become pretty variable and less accurate as it tries to predict higher ranks
+
+```{r}
+boost_df %>% 
+  group_by(rank, pred_rank) %>% 
+  summarize(diff = mean(mvppts - .pred)) %>% 
+  ggplot() +
+  geom_tile(aes(x = rank, y = pred_rank, fill = diff)) +
+  labs(x = "Actual Rank", y = "Predicted Rank") +
+  theme_cons
+```
+
+### Feature Importance
+
+```{r}
+vip(boost_fit, num_features = 20) +
+  theme_cons
+```
+
+```{r}
+boost_df %>% 
+  ggplot() +
+  geom_point(aes(x = comp_weighted, y = share)) +
+  geom_point(aes(x = comp_weighted, y = .pred), shape = "x", color = "red") +
+  theme_cons
+```
+
+### Pre-meeting notes
+
+Should I split up the sample in a way where the same seasons aren't split into different sets of training/testing data?
+
+### Notes
+
+  - Predict this year's MVP
+  - Only track of accuracy of top 5 players
+
+### Prediction
+
+
+please do this cleanly lol, it's a fucking mess
+
+```{r}
+cand2022 <- cands_df
+cand2022_df <- cand2022
+
+cand2022[features] <- as.data.frame(sapply(cands_df[features], as.numeric))
+
+cand2022[features] <- as.data.frame(scale(cand2022[features]))
+
+cand2022$predictions <- augment(boost_fit, new_data = cand2022[c(features)])$.pred
+
+
+```

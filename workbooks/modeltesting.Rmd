@@ -354,9 +354,24 @@ Some questions we can consider with the findings here are:
   - NBA MVP not truly a popularity contest?
   - What variables are most important when determining MVP?
   
-  
 Questions this week:
 
   - Would most models have similar feature importance rankings?
   - Help me build a betting model for the NBA?
+
+Dimension reduction
+
+  - Focus on variables that are per game since we can apply the model midseason
   
+Plot MVP odds for players across season
+  - Lebron (first half)
+  - Lebron (second half)
+  
+Compare the top three MVP candidates (the players in the right order), instead of MSE
+
+Orange - natural variance
+Yellow - model variance
+
+Everyone has a mean that comes from a distribution
+
+No true formula for the world but a distribution that is randomly sampled from

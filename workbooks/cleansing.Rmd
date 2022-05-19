@@ -1,0 +1,174 @@
+---
+title: "Cleansing"
+author: "Kobe Sarausad"
+date: "5/18/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Cleaning everything up (wrap up)
+
+```{r}
+library(tidymodels)
+library(kableExtra)
+library(rstantools)
+library(rstanarm)
+library(tidyverse)
+library(vip)
+library(glmnet)
+library(kableExtra)
+
+mvp <- read.csv("../data/weightedmvp.csv")
+# cand2022 <- read.csv("../data/cands2022.csv")
+
+theme_cons <- theme_minimal() +
+  theme(text = element_text(family = "Titillium Web"))
+```
+
+```{r}
+`%!in%` <- Negate(`%in%`)
+
+# features <- c(5, 11:20, 24:26, 28, 30:41)
+features <- names(mvp)[c(5, 11:20, 22:41)]
+
+predict <- c(4, 2, 7:10)
+
+mvp[features] <- as.data.frame(scale(mvp[features]))
+
+year_split <- sample(2010:2021, 8, FALSE)
+
+mvp_train <- mvp %>% 
+  filter(season %in% year_split)
+
+mvp_test <- mvp %>%
+  filter(season %!in% year_split)
+```
+
+#### Quick LASSO
+
+```{r}
+lasso <- cv.glmnet(data.matrix(mvp_train[features]), mvp_train$mvppts, alpha = 1)
+
+lambda <- lasso$lambda.min
+
+plot(lasso)
+
+lasso_best <- glmnet(data.matrix(mvp_train[features]), mvp_train$mvppts, alpha = lambda)
+lasso_df <- data.frame(coef(lasso_best, s = lambda)[, 1])
+colnames(lasso_df) <- c("coef")
+
+features_lasso <- lasso_df %>% 
+  filter(coef > 0) %>% 
+  rownames() %>% 
+  .[-1]
+```
+
+### XGBoost
+
+```{r}
+boost_spec <- boost_tree(trees = 5000, tree_depth = 4) %>%
+  set_engine("xgboost") %>%
+  set_mode("regression")
+
+boost_fit <- fit(boost_spec, mvppts ~ ., data = mvp_train[c(features_lasso, "mvppts")])
+
+boost_predict <- augment(boost_fit, new_data = mvp_test[c(features_lasso, "mvppts")])
+
+boost_predict %>% 
+  ggplot() +
+  geom_point(aes(x = mvppts, y = .pred))
+
+boost_df <- cbind(boost_predict, mvp_test[c(2, 3, 4)])
+
+boost_df <- boost_df %>% 
+  group_by(season) %>% 
+  arrange(-.pred, .by_group = TRUE) %>% 
+  mutate(pred_rank = 1:n(), rank = as.numeric(str_remove(rank, "T")), rank_diff_sq = (rank-pred_rank)^2, accuracy = pred_rank == rank)
+
+boost_df$accuracy %>% mean()
+
+rmse(boost_df, mvppts, .pred)
+
+boost_df %>% 
+  group_by(season) %>% 
+  summarize(mean(accuracy))
+```
+
+### Predict
+
+```{r}
+mvp2022 <- read.csv("../data/cand2022.csv")
+mvp2022_scaled <- as.data.frame(scale(mvp2022[features_lasso]))
+mvp2022_predict <- data.frame(player = mvp2022$player, rank = mvp2022$rank ,augment(boost_fit, new_data = mvp2022_scaled))
+
+tab <- mvp2022_predict %>% 
+  arrange(-.pred, .by_group = TRUE) %>% 
+  mutate(pred_rank = 1:n(), rank = as.numeric(str_remove(rank, "T")), rank_diff_sq = (rank-pred_rank)^2, accuracy = pred_rank == rank) %>% 
+  select(player, rank, pred_rank)
+
+real_tab <- left_join(tab, mvp2022[c("player", "player_id", "comp")]) %>% 
+  mutate(prof_img = paste0("https://www.basketball-reference.com/req/202106291/images/players/", player_id, ".jpg")) 
+
+real_tab %>% 
+  select(-c(player_id, prof_img)) %>% 
+  mutate(x = "") %>% 
+  relocate(x, .before = player) %>% 
+  kable(align = "l", escape = FALSE, col.names = c("", "Player", "Actual Rank", "Predicted Rank", "Sent. Score")) %>% 
+  kable_material(full_width = F, c("striped")) %>% 
+  row_spec(0, color = "black") %>% 
+  column_spec(1, image = spec_image(real_tab$prof_img, 60, 100), width = "4em") %>% 
+  column_spec(2, color = "black") %>% 
+  column_spec(3, color = "black", italic = T) %>% 
+  column_spec(4, color = "black", italic = T) %>% 
+  column_spec(5, background = spec_color(real_tab$comp, alpha = 1, begin = 0.3, end = 1,  option = "D", direction = 1, scale_from = c(-0.5, 1)), color = "white") 
+# %>%
+#   save_kable("predict.png", zoom = 2)
+```
+
+### Trying to see the average rank when sampled many random times
+
+```{r}
+run_simulations <- function(n) {
+  boost_spec <- boost_tree(trees = 5000, tree_depth = 4) %>%
+  set_engine("xgboost") %>%
+  set_mode("regression")
+  
+  avg_ranks <- data.frame(player = mvp2022$player, rank = 0)
+  
+  for (iteration in 1:n) {
+    year_split <- sample(2010:2021, 8, FALSE)
+
+    mvp_train <- mvp %>% 
+      filter(season %in% year_split)
+    
+    mvp_test <- mvp %>%
+      filter(season %!in% year_split)
+    
+    boost_fit <- fit(boost_spec, mvppts ~ ., data = mvp_train[c(features_lasso, "mvppts")])
+    
+    boost_predict <- augment(boost_fit, new_data = mvp2022[c(features_lasso, "mvppts")])
+    
+    boost_predict <- cbind(boost_predict, mvp2022[c(2, 3)])
+
+    boost_predict <- boost_predict %>% 
+      arrange(-.pred, .by_group = TRUE) %>% 
+      mutate(pred_rank = 1:n(), rank = as.numeric(str_remove(rank, "T")), rank_diff_sq = (rank-pred_rank)^2, accuracy = pred_rank == rank)
+    
+    for (i in 1:nrow(avg_ranks)) {
+      avg_ranks$rank[i] <- avg_ranks$rank[i] + boost_predict[boost_predict$player == avg_ranks$player[i], ]$pred_rank
+    }
+  }
+  
+  avg_ranks$rank <- avg_ranks$rank / n
+  
+  return(avg_ranks)
+}
+
+# sample1000 <- test_models(1000)
+
+# sample1000 %>% arrange(rank) %>% mutate(true_rank = 1:n())
+```
+Using different subsets of the original data, Steph Curry seems to, on average, have the highest rank out of the 12 players. The MVP of this year, Jokic, doesn't even touch the top 5 according to our model.
