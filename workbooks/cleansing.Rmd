@@ -64,6 +64,8 @@ features_lasso <- lasso_df %>%
   filter(coef > 0) %>% 
   rownames() %>% 
   .[-1]
+
+features_lasso
 ```
 
 ### XGBoost
@@ -128,7 +130,7 @@ real_tab %>%
 #   save_kable("predict.png", zoom = 2)
 ```
 
-### Trying to see the average rank when sampled many random times
+### Trying to see the average rank when sampled many times
 
 ```{r}
 run_simulations <- function(n) {
