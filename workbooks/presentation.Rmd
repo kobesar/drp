@@ -28,19 +28,21 @@ theme_cons <- theme_minimal() +
         title = element_text(size = 24))
 
 mvp_raw <- mvp_raw %>% 
-    mutate(img = paste0("<img src='https://www.basketball-reference.com/req/202106291/images/players/", player_id, ".jpg' width='25'/> <br>*", player, "<br>", season, "*")) 
+    mutate(img = paste0("<img src='https://www.basketball-reference.com/req/202106291/images/players/", player_id, ".jpg' width='35'/> <br>*", player, "<br>", season, "*")) 
 ```
 
 ## Outline {.build}
 
-> - Background - what, why, how we're doing this
+> - Background
 > - Data
 > - Modeling
 > - Results
 
 ## What am I doing? {.build}
 
-To learn more about machine learning and the applications of machine learning, we applied machine learning to try to predict who will become the MVP for the NBA
+To learn more about machine learning and the applications of machine learning
+
+We challenged ourselves with a question to answer: can we predict the NBA MVP?
 
 ## Background {.build}
 
@@ -49,11 +51,11 @@ To learn more about machine learning and the applications of machine learning, w
 > - Famous MVPs include LeBron James, Steph Curry, Kevin Durant
 > - All of which are known to have huge impact on the court
 
-## The Problem {.build}
+<!-- ## The Problem {.build} -->
 
-> - Picture this, you have $100 in Vegas, mid NBA season, and you want some money. 
-> - You want a data-driven way of doing this
-> - Why not put some money on some juicy odds for the NBA MVP?
+<!-- > - Picture this, you have $100 in Vegas, mid NBA season, and you want some money.  -->
+<!-- > - You want a data-driven way of doing this -->
+<!-- > - Why not put some money on some juicy odds for the NBA MVP? -->
 
 ## Dataset {.build}
 
@@ -118,17 +120,16 @@ This will give us an idea of what variables might become of use later on.
 ```{r}
 knitr::include_graphics("images/corr.png")
 ```
+## Raptor vs. WAR {.build .centered}
+
+```{r}
+knitr::include_graphics("images/raptor_war.png")
+```
 
 ## MVPs and their Raptor {.build .centered}
 
 ```{r}
 knitr::include_graphics("images/mvpavg.png")
-```
-
-## Raptor vs. WAR {.build .centered}
-
-```{r}
-knitr::include_graphics("images/raptor_war.png")
 ```
 
 ## Looking at the sentiment {.build .centered}
@@ -293,3 +294,20 @@ Test out model mid season
 Adding more features to the model
 
 Applying machine learning to more sports data!
+
+## Sources
+
+Notes:
+
+- less time on outline
+- less specifics
+- combine the data slides into one slide
+- percentiles for raptor MVPs
+- move correlation plot after correlation matrix plot
+- MORE pictures
+- don't need to be that detailed for data
+- focus on sentiment analysis (vader)
+- talk about few models and then results
+- less words
+- talk about cool stuff
+- explain what per game stats are (avgerage stats basically)

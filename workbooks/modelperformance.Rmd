@@ -62,8 +62,8 @@ lambda <- lasso$lambda.min
 plot(lasso)
 
 lasso_best <- glmnet(data.matrix(mvp_norm), mvp_train$mvppts, alpha = lambda)
-coef(lasso_best, s = lambda)[, 1]
-
+lasso_features <- coef(lasso_best, s = lambda)[, 1]
+lasso_features
 
 ```
 
