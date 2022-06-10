@@ -3,6 +3,7 @@ title: 'Machine Learning: Predicting the NBA MVP'
 author: "Kobe Sarausad"
 date: "6/4/2022"
 output:
+  slidy_presentation: default
   ioslides_presentation:
     widescreen: yes
     fullscreen: yes
@@ -138,59 +139,9 @@ mvp_text %>%
   column_spec(2, color = "grey", background = ifelse(sign(mvp_text[mvp_text$X %in% rows & mvp_text$compound != 0,]$compound) == 1, "lightgreen", "lightcoral"))
 ```
 
-<!-- - Briefly talk about how the data was obtained -->
-<!-- - Talk about the usage of vader package in R to do the analysis -->
-<!-- - Vader is built to analyze text from social media (built for the language of gen Z, almost) -->
-<!-- - Result of the analysis: comp, neu, pos, neg -->
-<!-- - Explain the meaning -->
-
-<!-- ## Sentiment Example {.build} -->
-
-<!-- ```{r message=F, fig.align='center', fig.width=14, fig.height=8} -->
-<!-- tneg <- head(mvp_raw[order(mvp_raw$comp), ], 10) -->
-<!-- tneg$img <- factor(tneg$img, levels = tneg$img) -->
-
-<!-- tneg %>%  -->
-<!--   ggplot() + -->
-<!--     geom_bar(aes(x = img, y = comp), stat = "identity", fill = "lightcoral", width = 0.5) + -->
-<!--     labs(x = "", y = "Sentiment", title = "") + -->
-<!--     scale_y_reverse() + -->
-<!--     theme_cons + -->
-<!--     theme(axis.text.x = element_markdown(color = "black", size = 12)) -->
-<!-- ``` -->
-
-<!-- <!-- > - _"[Damian Lillard]"We Stuck""_ --> -->
-<!-- <!-- _"Kyle Lowry and Kawhi Leonard could potentially go the same distance in the playoffs by losing the conference semi-finals."_ --> -->
-<!-- > - _"Who else is worried about Chris Paul being 1 year older having missed major portions of the season due to injury 3 of the last 4 years?"_ - Chris Paul (2020) -->
-
-<!-- ## Sentiment Example {.build} -->
-
-<!-- ```{r message=F, fig.align='center', fig.width=14, fig.height=8} -->
-<!-- tpos <- head(mvp_raw[order(-mvp_raw$comp), ], 10) -->
-<!-- tpos$img <- factor(tpos$img, levels = tpos$img) -->
-
-<!-- tpos %>%  -->
-<!--   ggplot() + -->
-<!--   geom_bar(aes(x = img, y = comp), stat = "identity", fill = "lightgreen", width = 0.5) + -->
-<!--   labs(x = "", y = "Sentiment", title = "") + -->
-<!--   theme_cons + -->
-<!--   theme(axis.text.x = element_markdown(color = "black", size = 12)) -->
-<!-- ``` -->
-
-<!-- > - _"[Feldman] Kevin Durant says he appreciates fans who heckle him to get a release in their lives. "It’s fun, man, because it’s entertainment. So if you want to heckle or if you want to cheer, as long as you’re getting a release from whatever is going on in your normal life, that’s cool.""_ -->
-<!-- > - _"another excellent highlight video from court chornicles showcasing kevin durant."_ - Kevin Durant (2010) -->
-
 ## Modeling {.build data-background=#fff}
 
 ```{r message=F, fig.align='center'}
-# full_df2 %>% 
-#   mutate(mvp = ifelse(rank == 1, "MVP", "Not MVP")) %>% 
-#   ggplot() +
-#   ggridges::geom_density_ridges(aes(x = mvppts, y =mvp , fill = mvp)) +
-#   theme_cons +
-#   labs(x = "MVP Points", y = "") +
-#   theme(legend.position = "none",
-#         axis.title.x = element_text(size = 12))
 knitr::include_graphics("images/model2.svg")
 ```
 
@@ -274,11 +225,11 @@ tab2022
 <!-- - Only look at top 3 predicted -->
 <!-- - Rationalize why we only looked at top 3 predicted -->
 
-## Full Predictions
+<!-- ## Full Predictions -->
 
-```{r}
-table_react2
-```
+<!-- ```{r} -->
+<!-- table_react2 -->
+<!-- ``` -->
 
 ## Future
 
