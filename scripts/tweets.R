@@ -5,12 +5,7 @@ library(rtweet)
 
 data <- read.csv("mvpdata.csv")
 
-appname <- "nbasent"
-api_key <- "tkgXkuj10IfgGlmSJucJVjvLU"
-api_secret <- "RgF63Byao64MQAAtld9VKvoyjjeCD8oPqVkxlQ7ch1srR0K0ZI"
-bearer <- "AAAAAAAAAAAAAAAAAAAAAIpubQEAAAAAKQNEOcic95gtXXmOEBo9OWrnfNg%3Dn11jDk0xxm44JJoMQ768z1fVrBFHsVmWqvO0pLWE7Fv3D6cNOj"
-access <- "1400304192250552321-CQaQgF5bjz5vtIXPkAn4TCINVi14Mu"
-access_secret <- "cPcx2g7wCKji2Gu6Ej5Zhz24nzMqeclUwMNPcKhfItu8F"
+#### SECRET
 
 twitter_token <- create_token(
   app = appname,
